@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Messenger</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Messenger</h1>
+        <form id="messageForm" method="POST" enctype="multipart/form-data">
+            <input type="text" name="username" id="username" placeholder="Username" required>
+            <textarea name="content" placeholder="Enter your message"></textarea>
+            <input type="file" name="file">
+            <button type="submit">Send</button>
+        </form>
+
+        <div class="messages" id="messagesContainer">
+            {% for message in messages %}
+            <div class="message" data-id="{{ message.id }}">
+                <span class="username">{{ message.username }}:</span>
+                <span class="content">{{ message.content }}</span>
+                {% if message.filename %}
+                <div class="attachment">
+                    {% if message.filename.endswith(('png', 'jpg', 'jpeg', 'gif')) %}
+                    <img src="{{ url_for('uploaded_file', filename=message.filename) }}" alt="Attached image" class="preview" onclick="showImageOverlay(this.src)">
+                    {% elif message.filename.endswith(('mp4', 'webm', 'ogg')) %}
+                    <video id="video-player-{{ message.id }}" src="{{ url_for('uploaded_file', filename=message.filename) }}" class="preview" controls>
+                        Your browser does not support the video tag.
+                    </video>
+                    {% else %}
+                    <a href="{{ url_for('uploaded_file', filename=message.filename) }}">{{ message.filename }}</a>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Image/Video Overlay -->
+    <div id="mediaOverlay" class="overlay" onclick="hideMediaOverlay()">
+        <img id="overlayImage" src="" alt="Full-size image" style="display: none;">
+        <video id="overlayVideo" controls style="display: none;">
+            Your browser does not support the video tag.
+        </video>
+    </div>
+
+    <script>
+        let lastMessageId = {{ messages[-1].id if messages else 0 }};  // Initialize with the last message ID from server
+
+        // Load username from local storage if it exists
+        document.addEventListener('DOMContentLoaded', (event) => {
+            const savedUsername = localStorage.getItem('username');
+            if (savedUsername) {
+                document.getElementById('username').value = savedUsername;
+            }
+        });
+
+        function loadNewMessages() {
+            $.ajax({
+                url: '/get_new_messages?last_id=' + lastMessageId,
+                type: 'GET',
+                success: function(data) {
+                    data.forEach(function(message) {
+                        if (message.id > lastMessageId) {
+                            lastMessageId = message.id; // Update the last message ID
+
+                            // Append only new messages
+                            const messageElement = `<div class="message" data-id="${message.id}">
+                                <span class="username">${message.username}:</span>
+                                <span class="content">${message.content}</span>
+                                ${message.filename ? createAttachmentHTML(message) : ''}
+                            </div>`;
+
+                            $('#messagesContainer').append(messageElement);
+                        }
+                    });
+                }
+            });
+        }
+
+        function createAttachmentHTML(message) {
+            if (/\.(png|jpg|jpeg|gif)$/i.test(message.filename)) {
+                return `<div class="attachment"><img src="/uploads/${message.filename}" alt="Attached image" class="preview" onclick="showImageOverlay(this.src)"></div>`;
+            } else if (/\.(mp4|webm|ogg)$/i.test(message.filename)) {
+                return `<div class="attachment"><video id="video-player-${message.id}" src="/uploads/${message.filename}" class="preview" controls></video></div>`;
+            } else {
+                return `<div class="attachment"><a href="/uploads/${message.filename}">${message.filename}</a></div>`;
+            }
+        }
+
+        function showImageOverlay(src) {
+            document.getElementById('overlayVideo').style.display = 'none';
+            document.getElementById('overlayImage').src = src;
+            document.getElementById('overlayImage').style.display = 'block';
+            document.getElementById('mediaOverlay').style.display = 'flex';
+        }
+
+        function showVideoOverlay(src) {
+            document.getElementById('overlayImage').style.display = 'none';
+            document.getElementById('overlayVideo').src = src;
+            document.getElementById('overlayVideo').style.display = 'block';
+            document.getElementById('mediaOverlay').style.display = 'flex';
+        }
+
+        function hideMediaOverlay() {
+            document.getElementById('mediaOverlay').style.display = 'none';
+            document.getElementById('overlayImage').src = '';
+            document.getElementById('overlayVideo').src = '';
+        }
+
+        setInterval(loadNewMessages, 5000);
+
+        $('#messageForm').submit(function(event) {
+            event.preventDefault();
+
+            // Save username to local storage
+            const username = document.getElementById('username').value;
+            localStorage.setItem('username', username);
+
+            var formData = new FormData(this);
+            $.ajax({
+                url: '/',
+                type: 'POST',
+                data: formData,
+                contentType: false,
+                processData: false,
+                success: function() {
+                    $('#messageForm')[0].reset();
+                    loadNewMessages();
+                    // Restore the saved username
+                    document.getElementById('username').value = localStorage.getItem('username');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
